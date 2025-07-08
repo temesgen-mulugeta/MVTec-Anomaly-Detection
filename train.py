@@ -81,7 +81,9 @@ def main(args):
     autoencoder.find_lr_opt(train_generator, validation_generator)
 
     # train
-    autoencoder.fit(lr_opt=autoencoder.lr_opt)
+    epochs = 100  # or any reasonable default
+    callbacks = []
+    autoencoder.fit(epochs, train_generator, validation_generator, callbacks)
 
     # save model
     autoencoder.save()
@@ -234,7 +236,10 @@ if __name__ == "__main__":
     else:
         logger.info("No GPU was detected. CNNs can be very slow without a GPU...")
     logger.info("Tensorflow version: {} ...".format(tf.__version__))
-    logger.info("Keras version: {} ...".format(keras.__version__))
+
+    if not os.path.isdir("saved_models"):
+        os.makedirs("saved_models")
+
     main(args)
 
 # Examples of commands to initiate training with mvtec architecture

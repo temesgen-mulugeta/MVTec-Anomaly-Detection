@@ -7,8 +7,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import keras
 
-from autoencoder import metrics
-from autoencoder import losses
+from autoencoder import losses, metrics
 
 
 def get_model_info(model_path):
@@ -30,38 +29,30 @@ def load_model_HDF5(model_path):
 
     # load autoencoder
     if loss == "mssim":
-        model = keras.models.load_model(
-            filepath=model_path,
-            custom_objects={
-                "LeakyReLU": keras.layers.LeakyReLU,
-                "loss": losses.mssim_loss(dynamic_range),
-                "mssim": metrics.mssim_metric(dynamic_range),
-            },
-            compile=True,
-        )
-
+        custom_objects = {
+            "LeakyReLU": keras.layers.LeakyReLU,
+            "loss": losses.mssim_loss(dynamic_range),
+            "mssim": metrics.mssim_metric(dynamic_range),
+        }
     elif loss == "ssim":
-        model = keras.models.load_model(
-            filepath=model_path,
-            custom_objects={
-                "LeakyReLU": keras.layers.LeakyReLU,
-                "loss": losses.ssim_loss(dynamic_range),
-                "ssim": metrics.ssim_metric(dynamic_range),
-            },
-            compile=True,
-        )
-
+        custom_objects = {
+            "LeakyReLU": keras.layers.LeakyReLU,
+            "loss": losses.ssim_loss(dynamic_range),
+            "ssim": metrics.ssim_metric(dynamic_range),
+        }
     else:
-        model = keras.models.load_model(
-            filepath=model_path,
-            custom_objects={
-                "LeakyReLU": keras.layers.LeakyReLU,
-                "l2_loss": losses.l2_loss,
-                "ssim": losses.ssim_loss(dynamic_range),
-                "mssim": metrics.mssim_metric(dynamic_range),
-            },
-            compile=True,
-        )
+        custom_objects = {
+            "LeakyReLU": keras.layers.LeakyReLU,
+            "l2_loss": losses.l2_loss,
+            "ssim": losses.ssim_loss(dynamic_range),
+            "mssim": metrics.mssim_metric(dynamic_range),
+        }
+
+    model = keras.models.load_model(
+        filepath=model_path,
+        custom_objects=custom_objects,
+        compile=False,  # Don't compile for inference
+    )
 
     # load training history
     dir_name = os.path.dirname(model_path)

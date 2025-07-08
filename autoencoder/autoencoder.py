@@ -137,6 +137,11 @@ class AutoEncoder:
         self.early_stopping = config.EARLY_STOPPING
         self.reduce_on_plateau = config.REDUCE_ON_PLATEAU
 
+        # Cyclical learning rate parameters
+        self.cyc_mode = "triangular"
+        self.max_momentum = 0.95
+        self.min_momentum = 0.85
+
         # verbosity
         self.verbose = verbose
         if verbose:
@@ -192,7 +197,7 @@ class AutoEncoder:
         )
         self.ktrain_lr_estimate()
         self.custom_lr_estimate()
-        self.lr_find_plot(n_skip_beginning=10, n_skip_end=1, save=True)
+        # self.lr_find_plot(n_skip_beginning=10, n_skip_end=1, save=True)
         return
 
     def ktrain_lr_estimate(self):
@@ -239,32 +244,25 @@ class AutoEncoder:
         logger.info("learning rate finder complete.")
         return
 
-    def fit(self, lr_opt):
+    def fit(self, epochs, train_generator, validation_generator, callbacks):
+        """
+        Fits the model using the Cyclical Learning Rate scheduler.
+        """
         # create tensorboard callback to monitor training
         tensorboard_cb = keras.callbacks.TensorBoard(
-            log_dir=self.log_dir, write_graph=True, update_freq="epoch"
+            log_dir=self.log_dir, write_graph=False, profile_batch=0
         )
-        # Print command to paste in browser for visualizing in Tensorboard
-        logger.info(
-            "run the following command in a seperate terminal to monitor training on tensorboard:"
-            + "\ntensorboard --logdir={}\n".format(self.log_dir)
-        )
-        assert self.learner.model is self.model
 
         # fit model using Cyclical Learning Rates
         self.hist = self.learner.autofit(
-            lr=lr_opt,
-            epochs=None,
+            lr=self.lr_opt,
+            epochs=epochs,
             early_stopping=self.early_stopping,
             reduce_on_plateau=self.reduce_on_plateau,
-            reduce_factor=2,
-            cycle_momentum=True,
-            max_momentum=0.95,
-            min_momentum=0.85,
-            monitor="val_loss",
+            class_weight=None,
             checkpoint_folder=None,
             verbose=self.verbose,
-            callbacks=[tensorboard_cb],
+            callbacks=[tensorboard_cb] + callbacks,
         )
         return
 
@@ -298,9 +296,13 @@ class AutoEncoder:
         )
         return model_name
 
-    def save(self):
+    def save(self, history=True, hdf5=True, inspection=False):
+        """
+        Saves the model, training history, and other relevant information.
+        """
         # save model
-        self.model.save(os.path.join(self.save_dir, self.create_model_name()))
+        if hdf5:
+            self.model.save(os.path.join(self.save_dir, self.create_model_name()))
         # save trainnig info
         info = self.get_info()
         with open(os.path.join(self.save_dir, "info.json"), "w") as json_file:
@@ -309,12 +311,13 @@ class AutoEncoder:
         self.loss_plot(save=True)
         self.lr_schedule_plot(save=True)
         # save training history
-        hist_dict = self.get_history_dict()
-        hist_df = pd.DataFrame(hist_dict)
-        hist_csv_file = os.path.join(self.save_dir, "history.csv")
-        with open(hist_csv_file, mode="w") as csv_file:
-            hist_df.to_csv(csv_file)
-        logger.info("training history has been successfully saved as csv file.")
+        if history:
+            hist_dict = self.get_history_dict()
+            hist_df = pd.DataFrame(hist_dict)
+            hist_csv_file = os.path.join(self.save_dir, "history.csv")
+            with open(hist_csv_file, mode="w") as csv_file:
+                hist_df.to_csv(csv_file)
+            logger.info("training history has been successfully saved as csv file.")
         logger.info(
             "training files have been successfully saved at: \n{}".format(self.save_dir)
         )
@@ -380,18 +383,20 @@ class AutoEncoder:
     ### Methods for plotting ============================================
 
     def lr_find_plot(self, n_skip_beginning=10, n_skip_end=1, save=False):
+        """
+        Plots the loss vs. learning rate to help visually determine a good learning
+        rate.
+        """
         # get losses and learning rates
         losses = np.array(self.learner.lr_finder.losses)
         lrs = np.array(self.learner.lr_finder.lrs)
-        # get display indicies
-        sb = n_skip_beginning
-        se = n_skip_end
+
         # plot
-        with plt.style.context("seaborn-darkgrid"):
+        with plt.style.context("seaborn-v0_8-darkgrid"):
             fig, ax = plt.subplots()
             plt.ylabel("loss")
             plt.xlabel("learning rate (log scale)")
-            ax.plot(lrs[sb:-se], losses[sb:-se])
+            ax.plot(lrs[n_skip_beginning:-n_skip_end], losses[n_skip_beginning:-n_skip_end])
             plt.xscale("log")
             ax.plot(
                 lrs[self.lr_base_i],
@@ -440,7 +445,7 @@ class AutoEncoder:
         return
 
     def lr_schedule_plot(self, save=False):
-        with plt.style.context("seaborn-darkgrid"):
+        with plt.style.context("seaborn-v0_8-darkgrid"):
             fig, _ = plt.subplots()
             self.learner.plot(plot_type="lr")
             plt.title("Cyclical Learning Rate Scheduler")
@@ -454,7 +459,23 @@ class AutoEncoder:
     def loss_plot(self, save=False):
         hist_dict = self.get_history_dict()
         hist_df = pd.DataFrame(hist_dict)
-        with plt.style.context("seaborn-darkgrid"):
+        with plt.style.context("seaborn-v0_8-darkgrid"):
+            fig = hist_df.plot().get_figure()
+            plt.title("Loss Plot")
+            plt.show()
+        if save:
+            plt.close()
+            fig.savefig(os.path.join(self.save_dir, "loss_plot.png"))
+            logger.info("loss_plot.png successfully saved.")
+        return
+
+    def plot_loss(self, save=False):
+        """
+        Plots the training and validation loss.
+        """
+        hist_dict = self.get_history_dict()
+        hist_df = pd.DataFrame(hist_dict)
+        with plt.style.context("seaborn-v0_8-darkgrid"):
             fig = hist_df.plot().get_figure()
             plt.title("Loss Plot")
             plt.show()
